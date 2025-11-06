@@ -1,15 +1,18 @@
 import re
 import os
+from typing import Callable
 
 import anthropic
+from pydantic import BaseModel, Field, ConfigDict
 
 
-class Artifact:
-    def __init__(self, identifier, type, title, content):
-        self.identifier = identifier
-        self.type = type
-        self.title = title
-        self.content = content
+class Artifact(BaseModel):
+    identifier: str
+    type: str
+    title: str
+    content: str
+
+    model_config = ConfigDict()
 
     def __str__(self):
         return f'<artifact identifier="{self.identifier}" type="{self.type}" title="{self.title}">\n{self.content}\n</artifact>'
@@ -18,18 +21,22 @@ class Artifact:
         return f'Artifact(identifier="{self.identifier}", title="{self.title}")'
     
     def dict(self):
-        return {
-            'identifier': self.identifier,
-            'type': self.type,
-            'title': self.title,
-            'content': self.content,
-        }
+        return self.model_dump(by_alias=False)
     
-class Tool:
-    def __init__(self, schema, callable):
-        self.schema = schema
-        self.callable = callable
-        self.name = schema["name"]
+class Tool(BaseModel):
+    tool_schema: dict = Field(alias="schema")
+    callable: Callable = Field(exclude=True)
+    
+    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
+    
+    @property
+    def name(self) -> str:
+        return self.tool_schema["name"]
+    
+    @property
+    def schema(self) -> dict:
+        """Backward compatibility property for accessing tool_schema"""
+        return self.tool_schema
 
 SYSTEM_MESSAGE = f"""\
 You are a helpful assistant.
@@ -126,7 +133,7 @@ Artifacts are self-contained pieces of content that can be referenced in the con
 class Conversation:
     def __init__(self, tools=None, messages=None, artifacts=None):
         self.client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-        self.model = "claude-3-5-sonnet-20241022"
+        self.model = "claude-sonnet-4-5"
         self.messages = messages or []
         self.artifacts = artifacts or []
         self.tools = tools or []
@@ -291,7 +298,7 @@ class Conversation:
             content = match.group(4).strip()
             
             # Create and store artifact
-            artifact = Artifact(identifier, type_, title, content)
+            artifact = Artifact(identifier=identifier, type=type_, title=title, content=content)
             artifacts.append(artifact)
             
             # Add anchor tag
@@ -308,7 +315,7 @@ class Conversation:
 class DumbConversation:
     def __init__(self, tools=None, messages=None, artifacts=None):
         self.client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-        self.model = "claude-3-5-sonnet-20241022"
+        self.model = "claude-sonnet-4-5"
         self.messages = messages or []
         self.artifacts = []  # DumbConversation doesn't support artifacts
         self.tools = tools or []
